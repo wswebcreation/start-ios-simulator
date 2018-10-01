@@ -1,0 +1,34 @@
+{
+  "name": "start-ios-simulator",
+  "version": "0.1.0",
+  "description": "A simple library to start an iOS simulator on your local machine",
+  "main": "index.js",
+  "bin": {
+    "start-ios-simulator": "./bin/start-ios-simulator.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wswebcreation/start-ios-simulator.git"
+  },
+  "keywords": [
+    "iOS",
+    "cli",
+    "simualtor"
+  ],
+  "author": "wswebcreation",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/wswebcreation/start-ios-simulator/issues"
+  },
+  "homepage": "https://github.com/wswebcreation/start-ios-simulator#readme",
+  "dependencies": {
+    "chalk": "^2.4.1",
+    "inquirer": "^6.2.0"
+  },
+  "engines": {
+    "node": ">=6.9.x"
+  }
+}
