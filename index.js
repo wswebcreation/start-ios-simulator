@@ -21,6 +21,8 @@ prompt([{
 
     closeBootedSimulator(chosenSimulator);
     bootSimulator(chosenSimulator);
+    startSimulator(chosenSimulator);
+
     console.log(cyan(`\n============================  iOS iPhone|iPad CLI Helper  ============================\n`));
   });
 
@@ -75,5 +77,15 @@ function closeBootedSimulator(chosenSimulator) {
  */
 function bootSimulator(chosenSimulator) {
   execFileSync('xcrun', ['simctl', 'boot', chosenSimulator.udid], {encoding: 'utf8'});
-  console.log(green(`${chosenSimulator.name} wil be opened.`));
+  console.log(green(`${chosenSimulator.name} wil be booted.`));
+}
+
+/**
+ * Start the Simulator app
+ *
+ * @param {object} chosenSimulator
+ */
+function startSimulator(chosenSimulator) {
+    console.log(green(`${chosenSimulator.name} wil be opened.`));
+    execFileSync('open', ['-a', 'Simulator.app'], {encoding: 'utf8'});
 }
