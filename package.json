@@ -2,12 +2,16 @@
   "name": "start-ios-simulator",
   "version": "0.1.2",
   "description": "A simple library to start an iOS simulator on your local machine",
-  "main": "index.js",
-  "bin": {
-    "start-ios-simulator": "./bin/start-ios-simulator.js"
-  },
+  "bin": "build/index.js",
+  "main": "build/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "clean": "rimraf coverage build .tmp",
+    "compile": "babel lib/ -d build/",
+    "watch": "npm run compile -- --watch",
+    "release": "np",
+    "precompile": "npm run clean",
+    "prepublish": "npm run compile",
+    "prerelease": "npm run compile"
   },
   "repository": {
     "type": "git",
@@ -25,8 +29,15 @@
   },
   "homepage": "https://github.com/wswebcreation/start-ios-simulator#readme",
   "dependencies": {
-    "chalk": "^2.4.1",
-    "inquirer": "^6.2.0"
+    "chalk": "^2.4.2",
+    "inquirer": "^6.4.1"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.4.4",
+    "@babel/core": "^7.4.5",
+    "@babel/preset-env": "^7.4.5",
+    "np": "^5.0.3",
+    "rimraf": "^2.6.3"
   },
   "engines": {
     "node": ">=6.9.x"
