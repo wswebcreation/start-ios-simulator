@@ -114,12 +114,36 @@ export function openSimulatorApp(udid: string): boolean {
 }
 
 const BOOT_TIMEOUT_MS = 10 * 60_000;
+const POLL_MS = 500;
+const STARTED = "com.apple.springboard.finishedstartup";
 
-/** Wait until the simulator has really booted, so the home screen is there, not only the process. The first boot of a new one can take minutes. */
-export async function waitForBoot(udid: string, timeoutMs = BOOT_TIMEOUT_MS): Promise<void> {
+export interface WaitOptions {
+  timeoutMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Wait until the simulator is ready to use: its home screen is there, not only the system.
+ * `simctl bootstatus` returns as soon as the system has booted and its data is migrated, while the Apple logo is still
+ * on the screen. SpringBoard (the home screen) sets the notification state finishedstartup to 1 when it is done.
+ * The first boot of a new simulator can take minutes.
+ */
+export async function waitForBoot(udid: string, { timeoutMs = BOOT_TIMEOUT_MS, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }: WaitOptions = {}): Promise<void> {
+  const started = Date.now();
+  const timedOut = () => new Error(`The simulator did not finish booting: it took longer than ${Math.round(timeoutMs / 60_000)} minutes`);
+
   const { output, exitCode } = await runFileAsync("xcrun", ["simctl", "bootstatus", udid], { timeout: timeoutMs });
   if (exitCode !== 0) {
-    const reason = output.split("\n").at(-1) || `it took longer than ${Math.round(timeoutMs / 60_000)} minutes`;
-    throw new Error(`The simulator did not finish booting: ${reason}`);
+    throw new Error(`The simulator did not finish booting: ${output.split("\n").at(-1) || timedOut().message.split(": ")[1]}`);
   }
+
+  while (Date.now() - started < timeoutMs) {
+    const state = await runFileAsync("xcrun", ["simctl", "spawn", udid, "notifyutil", "-g", STARTED], { timeout: 10_000 }).catch(() => null);
+    const value = state?.output.match(new RegExp(`${STARTED}\\s+(\\d+)`))?.[1];
+    // An answer we do not understand (an iOS without notifyutil): bootstatus is all we have
+    if (value === undefined) return;
+    if (Number(value) > 0) return;
+    await sleep(POLL_MS);
+  }
+  throw timedOut();
 }

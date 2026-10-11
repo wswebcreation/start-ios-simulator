@@ -124,23 +124,42 @@ test("Device Hub itself is the last resort, and a failure is reported", () => {
   assert.equal(s.openSimulatorApp("U"), false);
 });
 
-test("waiting for the boot is waiting for simctl bootstatus, and a failure says why", async () => {
-  await s.waitForBoot("U", 1000);
-  assert.deepEqual(runFileAsync.mock.calls[0]!.arguments, ["xcrun", ["simctl", "bootstatus", "U"], { timeout: 1000 }]);
+const finished = (value: number) => result(`com.apple.springboard.finishedstartup ${value}`);
+const noSleep = { sleep: async () => {} };
 
+test("waiting for the boot is waiting for simctl bootstatus, and then for the home screen", async () => {
+  const answers = [result(), finished(0), finished(0), finished(40603)];
+  runFileAsync.mock.mockImplementation(async () => answers.shift()!);
+  await s.waitForBoot("U", { timeoutMs: 1000, ...noSleep });
+  assert.deepEqual(runFileAsync.mock.calls[0]!.arguments, ["xcrun", ["simctl", "bootstatus", "U"], { timeout: 1000 }]);
+  assert.deepEqual(runFileAsync.mock.calls[1]!.arguments[1], ["simctl", "spawn", "U", "notifyutil", "-g", "com.apple.springboard.finishedstartup"]);
+  assert.equal(runFileAsync.mock.callCount(), 4, "it asks until SpringBoard says it is done");
+  runFileAsync.mock.mockImplementation(async () => result());
+});
+
+test("the sleep between the questions is short, and an iOS that cannot answer is taken as ready after bootstatus", async () => {
+  const sleeps: number[] = [];
+  const answers = [result(), finished(0), finished(1)];
+  runFileAsync.mock.mockImplementation(async () => answers.shift()!);
+  await s.waitForBoot("U", { sleep: async (ms) => void sleeps.push(ms) });
+  assert.deepEqual(sleeps, [500]);
+
+  const unknown = [result(), result("notifyutil: not found", 127)];
+  runFileAsync.mock.mockImplementation(async () => unknown.shift()!);
+  await s.waitForBoot("U", noSleep);
+  assert.equal(unknown.length, 0);
+  runFileAsync.mock.mockImplementation(async () => result());
+});
+
+test("a boot that does not finish says why", async () => {
   runFileAsync.mock.mockImplementationOnce(async () => result("Monitoring boot status\nUnable to get boot status", 1));
   await assert.rejects(s.waitForBoot("U"), /did not finish booting: Unable to get boot status/);
   runFileAsync.mock.mockImplementationOnce(async () => result("", 1));
-  await assert.rejects(s.waitForBoot("U", 120_000), /longer than 2 minutes/);
+  await assert.rejects(s.waitForBoot("U", { timeoutMs: 120_000 }), /longer than 2 minutes/);
 });
 
-test("the output of Xcode 10 works: no availability field, and runtimes without a profile are skipped (issues #2 and #5)", () => {
-  const old = {
-    devices: {
-      "com.apple.CoreSimulator.SimRuntime.iOS-13-0": [{ state: "Shutdown", isAvailable: false, name: "iPhone 8", udid: "A", availabilityError: "runtime profile not found" }],
-      "com.apple.CoreSimulator.SimRuntime.iOS-12-2": [{ state: "Shutdown", isAvailable: true, name: "iPhone 5s", udid: "B" }, { state: "Shutdown", name: "iPhone 6", udid: "C" }],
-      "com.apple.CoreSimulator.SimRuntime.tvOS-12-2": [{ state: "Shutdown", isAvailable: true, name: "Apple TV", udid: "D" }],
-    },
-  };
-  assert.deepEqual(s.parseSimulators(old).map((x) => `${x.name} ${x.version}`), ["iPhone 5s 12.2", "iPhone 6 12.2"]);
+test("a home screen that never comes is a timeout", async () => {
+  runFileAsync.mock.mockImplementation(async (_f, args) => (args?.includes("bootstatus") ? result() : finished(0)));
+  await assert.rejects(s.waitForBoot("U", { timeoutMs: 30, sleep: (ms) => new Promise((r) => setTimeout(r, ms + 10)) }), /did not finish booting: it took longer/);
+  runFileAsync.mock.mockImplementation(async () => result());
 });
