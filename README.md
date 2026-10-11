@@ -18,7 +18,7 @@ Requires Node.js 24 or newer and a Mac with [Xcode](https://apps.apple.com/app/x
 | `start-ios-simulator --check` | See what is set up and what is missing, and which simulators exist |
 | `start-ios-simulator --setup` | Install what is missing |
 
-It opens the Simulator app, waits until the simulator has booted, remembers the one you used last, and leaves the simulator running when the command ends. A simulator that is running already is not restarted.
+Every simulator opens in a window of its own (on Xcode 27 and newer too, where the Simulator app has been replaced by Device Hub). It waits until the simulator has booted, remembers the one you used last, and leaves the simulator running when the command ends. A simulator that is running already is not restarted.
 
 ### Several simulators with your own names
 

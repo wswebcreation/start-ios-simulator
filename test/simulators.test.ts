@@ -107,10 +107,17 @@ test("the Simulator app opens with the simulator in front", () => {
   assert.deepEqual(runFile.mock.calls[0]!.arguments, ["open", ["-a", "Simulator", "--args", "-CurrentDeviceUDID", "U"]]);
 });
 
-test("without the Simulator app (Xcode 27 and newer) Device Hub is opened, and a failure is reported", () => {
+test("without the Simulator app (Xcode 27 and newer) the simulator opens in a window of its own with the link of Device Hub", () => {
   runFile.mock.mockImplementation((_file, args = []) => result("", args[1] === "Simulator" ? 1 : 0));
   assert.equal(s.openSimulatorApp("U"), true);
-  assert.deepEqual(runFile.mock.calls[1]!.arguments, ["open", ["-a", "/Applications/Xcode.app/Contents/Applications/DeviceHub.app"]]);
+  assert.deepEqual(runFile.mock.calls[1]!.arguments, ["open", ["devices://device/open?id=U"]]);
+  assert.equal(runFile.mock.callCount(), 2);
+});
+
+test("Device Hub itself is the last resort, and a failure is reported", () => {
+  runFile.mock.mockImplementation((_file, args = []) => result("", args[0] === "-a" && args[1] !== "Simulator" ? 0 : 1));
+  assert.equal(s.openSimulatorApp("U"), true);
+  assert.deepEqual(runFile.mock.calls[2]!.arguments, ["open", ["-a", "/Applications/Xcode.app/Contents/Applications/DeviceHub.app"]]);
   runFile.mock.mockImplementation(() => result("", 1));
   assert.equal(s.openSimulatorApp("U"), false);
   run.mock.mockImplementationOnce(() => null);

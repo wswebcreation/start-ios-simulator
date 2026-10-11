@@ -102,11 +102,13 @@ export function deviceHubApp(): string | null {
 }
 
 /**
- * Show the booted simulators. The Simulator app does that, with the simulator in front. Without it (Xcode 27 and newer)
- * Device Hub is opened instead, it shows the booted simulators itself. False when neither could be opened.
+ * Show the simulator in a window of its own. The Simulator app does that, with the simulator in front. Without it
+ * (Xcode 27 and newer) the devices:// link of Device Hub opens that simulator in a window of its own too, one per
+ * simulator. Device Hub itself is the last resort. False when none of them could be opened.
  */
 export function openSimulatorApp(udid: string): boolean {
   if (runFile("open", ["-a", "Simulator", "--args", "-CurrentDeviceUDID", udid]).exitCode === 0) return true;
+  if (runFile("open", [`devices://device/open?id=${udid}`]).exitCode === 0) return true;
   const hub = deviceHubApp();
   return hub !== null && runFile("open", ["-a", hub]).exitCode === 0;
 }
