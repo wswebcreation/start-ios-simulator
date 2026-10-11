@@ -1,0 +1,35 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    # Every system should finish well within this, a hanging test must not block the pull request for hours
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      # The simulator only exists on macOS. Linux is there to check that the tool says so, instead of crashing.
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Unit tests
+        run: npm test
+      - name: Dry run of the setup
+        if: runner.os == 'macOS'
+        run: node dist/cli.js --setup --yes --dry-run

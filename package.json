@@ -1,17 +1,26 @@
 {
   "name": "start-ios-simulator",
   "version": "1.0.1",
-  "description": "A simple library to start an iOS simulator on your local machine",
-  "bin": "build/index.js",
-  "main": "build/index.js",
+  "description": "Start an iOS simulator from your terminal, and set up the iOS runtime and simulators when they are missing",
+  "bin": {
+    "start-ios-simulator": "dist/cli.js"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "clean": "rimraf coverage build .tmp",
-    "compile": "babel lib/ -d build/",
-    "watch": "npm run compile -- --watch",
-    "release": "np",
-    "precompile": "npm run clean",
-    "prepublish": "npm run compile",
-    "prerelease": "npm run compile"
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "node --experimental-test-module-mocks --test \"test/**/*.test.ts\"",
+    "prepublishOnly": "npm run build",
+    "test:watch": "node --experimental-test-module-mocks --test --watch \"test/**/*.test.ts\""
   },
   "repository": {
     "type": "git",
@@ -20,7 +29,10 @@
   "keywords": [
     "iOS",
     "cli",
-    "simualtor"
+    "simulator",
+    "xcode",
+    "simctl",
+    "appium"
   ],
   "author": "wswebcreation",
   "license": "MIT",
@@ -29,17 +41,16 @@
   },
   "homepage": "https://github.com/wswebcreation/start-ios-simulator#readme",
   "dependencies": {
-    "chalk": "^2.4.2",
-    "inquirer": "^6.4.1"
+    "@inquirer/prompts": "^8.7.3"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
   },
   "devDependencies": {
-    "@babel/cli": "^7.4.4",
-    "@babel/core": "^7.4.5",
-    "@babel/preset-env": "^7.4.5",
-    "np": "^5.0.3",
-    "rimraf": "^2.6.3"
-  },
-  "engines": {
-    "node": ">=6.9.x"
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
   }
 }
