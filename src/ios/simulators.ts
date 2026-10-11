@@ -1,4 +1,5 @@
-import { runFile, runFileAsync } from "../shell.ts";
+import { join } from "node:path";
+import { run, runFile, runFileAsync } from "../shell.ts";
 import { type DeviceType, compareVersions, runtimeId, simctl, simctlJson } from "./runtimes.ts";
 
 export interface Simulator {
@@ -94,9 +95,20 @@ export function bootSimulator(udid: string): { ok: boolean; output: string } {
 export const shutdownSimulator = (udid: string) => simctl(["shutdown", udid]);
 export const eraseSimulator = (udid: string) => simctl(["erase", udid]);
 
-/** The Simulator app shows the screens of the simulators that are booted. UDID: which one comes in front when the app starts. */
+/** Xcode 27 replaced the Simulator app by Device Hub, that one lives inside Xcode. */
+export function deviceHubApp(): string | null {
+  const developerDir = run("xcode-select -p");
+  return developerDir ? join(developerDir, "..", "Applications", "DeviceHub.app") : null;
+}
+
+/**
+ * Show the booted simulators. The Simulator app does that, with the simulator in front. Without it (Xcode 27 and newer)
+ * Device Hub is opened instead, it shows the booted simulators itself. False when neither could be opened.
+ */
 export function openSimulatorApp(udid: string): boolean {
-  return runFile("open", ["-a", "Simulator", "--args", "-CurrentDeviceUDID", udid]).exitCode === 0;
+  if (runFile("open", ["-a", "Simulator", "--args", "-CurrentDeviceUDID", udid]).exitCode === 0) return true;
+  const hub = deviceHubApp();
+  return hub !== null && runFile("open", ["-a", hub]).exitCode === 0;
 }
 
 const BOOT_TIMEOUT_MS = 10 * 60_000;

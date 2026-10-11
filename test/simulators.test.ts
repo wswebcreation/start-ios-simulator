@@ -4,7 +4,8 @@ import { beforeEach, mock, test } from "node:test";
 const result = (output = "", exitCode = 0) => ({ output, exitCode });
 const runFile = mock.fn((_file: string, _args?: string[]) => result());
 const runFileAsync = mock.fn(async (_file: string, _args?: string[], _options?: unknown) => result());
-mock.module("../src/shell.ts", { namedExports: { IS_MAC: true, run: () => null, runFile, runFileAsync } });
+const run = mock.fn((_cmd: string): string | null => "/Applications/Xcode.app/Contents/Developer");
+mock.module("../src/shell.ts", { namedExports: { IS_MAC: true, run, runFile, runFileAsync } });
 const s = await import("../src/ios/simulators.ts");
 
 const device = (name: string, state = "Shutdown", extra = {}) => ({ udid: `UDID-${name}`, name, state, isAvailable: true, ...extra });
@@ -104,6 +105,16 @@ test("booting a simulator that is booted already is not a failure", () => {
 test("the Simulator app opens with the simulator in front", () => {
   assert.equal(s.openSimulatorApp("U"), true);
   assert.deepEqual(runFile.mock.calls[0]!.arguments, ["open", ["-a", "Simulator", "--args", "-CurrentDeviceUDID", "U"]]);
+});
+
+test("without the Simulator app (Xcode 27 and newer) Device Hub is opened, and a failure is reported", () => {
+  runFile.mock.mockImplementation((_file, args = []) => result("", args[1] === "Simulator" ? 1 : 0));
+  assert.equal(s.openSimulatorApp("U"), true);
+  assert.deepEqual(runFile.mock.calls[1]!.arguments, ["open", ["-a", "/Applications/Xcode.app/Contents/Applications/DeviceHub.app"]]);
+  runFile.mock.mockImplementation(() => result("", 1));
+  assert.equal(s.openSimulatorApp("U"), false);
+  run.mock.mockImplementationOnce(() => null);
+  assert.equal(s.openSimulatorApp("U"), false);
 });
 
 test("waiting for the boot is waiting for simctl bootstatus, and a failure says why", async () => {

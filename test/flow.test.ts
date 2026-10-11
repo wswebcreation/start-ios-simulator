@@ -157,6 +157,11 @@ test("a simulator that runs already is not started again, but it is shown", asyn
   assert.equal(calls.openSimulatorApp!.length, 1);
 });
 
+test("when the Simulator app cannot be opened the simulator still runs, with a hint", async () => {
+  assert.equal(await main(["iPad Air"], fakeDeps({ openSimulatorApp: () => false })), EXIT.ok);
+  assert.match(text(), /Could not open the Simulator app \(or Device Hub\)[\s\S]*is ready/);
+});
+
 test("--headless does not open the Simulator app", async () => {
   assert.equal(await main(["iPad Air", "--headless"], fakeDeps()), EXIT.ok);
   assert.equal(calls.openSimulatorApp, undefined);

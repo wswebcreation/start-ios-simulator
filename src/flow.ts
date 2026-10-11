@@ -9,7 +9,7 @@ import { defaultTarget, namedTarget, planIos } from "./ios/setup.ts";
 import { type Simulator, bootSimulator, eraseSimulator, findSimulator, label, matchesIos, openSimulatorApp, shutdownSimulator, waitForBoot } from "./ios/simulators.ts";
 import { blocking, runPlan, showPlan, type Step } from "./plan.ts";
 import { IS_MAC } from "./shell.ts";
-import { bold, cyan, dim, fail, info, ok, settings, startSpinner } from "./ui.ts";
+import { bold, cyan, dim, fail, info, ok, settings, startSpinner, warn } from "./ui.ts";
 
 /** Everything the flow reaches out to, so a test can replace the parts it does not want to run for real. */
 export const realDeps = {
@@ -165,7 +165,7 @@ async function start(opts: Options, state: Inspection, deps: Deps): Promise<numb
   const name = label(sim);
   if (sim.booted && !erase) {
     ok(`${name} is already running`);
-    if (!headless) deps.openSimulatorApp(sim.udid);
+    if (!headless) show(sim, deps);
     return EXIT.ok;
   }
 
@@ -183,7 +183,7 @@ async function start(opts: Options, state: Inspection, deps: Deps): Promise<numb
     const boot = deps.bootSimulator(sim.udid);
     if (!boot.ok) throw new Error(`Booting ${name} failed: ${boot.output}`);
     // The window opens right away, so you see the simulator come up
-    if (!headless) deps.openSimulatorApp(sim.udid);
+    if (!headless) show(sim, deps);
     if (!opts.wait) {
       info("Started, it is still booting.");
       return EXIT.ok;
@@ -202,6 +202,11 @@ async function start(opts: Options, state: Inspection, deps: Deps): Promise<numb
     fail((e as Error).message);
     return EXIT.failed;
   }
+}
+
+/** Open the app that shows the simulator. Not being able to is no reason to stop, the simulator runs. */
+function show(sim: Simulator, deps: Deps): void {
+  if (!deps.openSimulatorApp(sim.udid)) warn("Could not open the Simulator app (or Device Hub). The simulator is running, open it yourself.");
 }
 
 function assertOk(result: { output: string; exitCode: number }, message: string): void {
