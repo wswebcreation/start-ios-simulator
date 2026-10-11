@@ -92,7 +92,7 @@ async function run(opts: Options, deps: Deps): Promise<number> {
   deps.printBanner(packageVersion());
   deps.printAbout();
 
-  let state = deps.inspect();
+  let state = await busy(deps, lookingText(opts), deps.inspect);
   if (opts.delete.length > 0) return deleteSimulators(opts, state, deps);
   if (opts.prune) return prune(opts, state, deps);
   let asked: NewSimulator[] | null = null;
@@ -111,7 +111,7 @@ async function run(opts: Options, deps: Deps): Promise<number> {
     if (wantsPlan || blocking(steps).length > 0) {
       const finished = await setup(opts, steps, deps, wantsPlan);
       if (finished !== null) return finished;
-      state = deps.inspect();
+      state = await busy(deps, "Checking your setup again...", deps.inspect);
     }
   } else {
     ok(`Xcode ${dim(state.xcode?.version ?? "")}`.trimEnd());
@@ -282,6 +282,10 @@ async function busy<T>(deps: Deps, text: string, work: () => Promise<T>): Promis
     stop();
   }
 }
+
+/** What we say while we look at the machine, depending on what was asked. */
+const lookingText = (opts: Options) =>
+  opts.delete.length > 0 ? "Looking up your simulators..." : opts.prune ? "Checking your iOS runtimes..." : opts.check ? "Checking what is set up..." : "Checking your setup...";
 
 /** A bare --create: ask for the version once and the device and name of each simulator, and go on as if the version was given on the command line. */
 async function askForSimulators(opts: Options, state: Inspection, deps: Deps): Promise<{ opts: Options; asked: NewSimulator[] }> {

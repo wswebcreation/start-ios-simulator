@@ -116,7 +116,7 @@ async function licenseStep(): Promise<boolean> {
     dry("would run: sudo xcodebuild -license accept, and sudo xcodebuild -runFirstLaunch");
     return true;
   }
-  if (inspect().xcode === null) {
+  if ((await inspect()).xcode === null) {
     warn("Set up Xcode first.");
     return false;
   }

@@ -41,7 +41,7 @@ function fakeDeps(overrides: Partial<Deps> = {}): Partial<Deps> {
   return {
     printBanner: spy("printBanner", () => {}),
     printAbout: spy("printAbout", () => {}),
-    inspect: spy("inspect", () => state),
+    inspect: spy("inspect", async () => state),
     runPlan: spy("runPlan", async () => ({ ok: true, applied: [] as string[], declined: false })),
     startSpinner: spy("startSpinner", () => () => {}),
     bootSimulator: spy("bootSimulator", () => ({ ok: true, output: "" })),
@@ -211,9 +211,11 @@ test("a simulator that cannot be erased, shut down or booted is reported", async
 
 test("a boot that does not finish is reported, and the spinner is gone before it is", async () => {
   const stop = mock.fn();
-  const failed = fakeDeps({ startSpinner: () => stop, waitForBoot: async () => { throw new Error("The simulator did not finish booting"); } });
+  const started = mock.fn();
+  const failed = fakeDeps({ startSpinner: () => (started(), stop), waitForBoot: async () => { throw new Error("The simulator did not finish booting"); } });
   assert.equal(await main(["iPad Air"], failed), EXIT.failed);
-  assert.equal(stop.mock.callCount(), 1);
+  assert.equal(started.mock.callCount(), 2, "one for looking at the machine, one for the boot");
+  assert.equal(stop.mock.callCount(), 2, "every spinner is stopped");
   assert.match(text(), /did not finish booting/);
 });
 
@@ -260,7 +262,7 @@ test("without simulators the setup is offered, and afterwards a simulator is sta
   state = { ...ready, simulators: [] };
   const after = [sim("iPhone_18_Pro_iOS_27_0")];
   let inspected = 0;
-  const deps = fakeDeps({ inspect: () => (inspected++ === 0 ? state : { ...ready, simulators: after }) });
+  const deps = fakeDeps({ inspect: async () => (inspected++ === 0 ? state : { ...ready, simulators: after }) });
   assert.equal(await main([], deps), EXIT.ok);
   assert.equal(calls.runPlan!.length, 1);
   assert.match(calls.runPlan![0]![0] as string, /Something is missing/);
@@ -464,4 +466,22 @@ test("--prune needs Xcode, and a runtime that cannot be removed is reported", as
   const broken = fakeDeps({ deleteRuntime: async () => ({ output: "Cannot delete", exitCode: 1 }) });
   assert.equal(await main(["--prune", "--yes"], broken), EXIT.failed);
   assert.match(text(), /Removing iOS 26\.5 runtime, 8\.5 GB failed\s+Cannot delete/);
+});
+
+// ─── what we say while we look ──────────────────────────────────────────────
+
+test("while we look at the machine a spinner says what we are doing, depending on what was asked", async () => {
+  const texts: string[] = [];
+  const deps = fakeDeps({ startSpinner: (text: string) => (texts.push(text), () => {}) });
+  await main(["iPad Air", "--headless", "--no-wait"], deps);
+  await main(["--check"], deps);
+  await main(["--delete", "iPad Air", "--dry-run"], deps);
+  await main(["--prune", "--dry-run"], deps);
+  await main(["--setup"], deps);
+  assert.deepEqual(texts, ["Checking your setup...", "Checking what is set up...", "Looking up your simulators...", "Checking your iOS runtimes...", "Checking your setup..."]);
+
+  texts.length = 0;
+  state = { ...ready, simulators: [] };
+  await main([], fakeDeps({ startSpinner: (text: string) => (texts.push(text), () => {}), inspect: async () => (texts.length === 1 ? state : ready) }));
+  assert.deepEqual(texts.slice(0, 2), ["Checking your setup...", "Checking your setup again..."], "after a setup we look again");
 });
