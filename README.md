@@ -105,15 +105,46 @@ Your last simulator is saved in `~/.config/start-ios-simulator/config.json`.
 ## Use it from code
 
 ```ts
-import { inspect, listSimulators, namedTarget, setupIos } from "start-ios-simulator";
+import { inspect, namedTarget, setupIos } from "start-ios-simulator";
 
-const state = inspect();
+const state = await inspect();
 const target = namedTarget(state, state.sdkVersion, ["Test_1_iOS_{ios}", "Test_2_iOS_{ios}"]);
 await setupIos(state, target);
-console.log(listSimulators());
+```
+
+`inspect()` is asynchronous, like in start-android-emulator: it asks Xcode and simctl at the same time without blocking.
+
+To build the plan yourself, for example with your own simulator names and an extra step of your own, use `planIos` and `runPlan`. `configure` does what `--yes` and `--dry-run` do for the CLI.
+
+```ts
+import { configure, inspect, namedTarget, planIos, runPlan, type Step } from "start-ios-simulator";
+
+configure({ yes: false, dryRun: false });
+const state = await inspect();
+const target = namedTarget(state, state.sdkVersion, ["Workshop_1_iPhone_17_Pro_iOS_{ios}", "Workshop_2_iPhone_17_Pro_iOS_{ios}"], "iPhone 17 Pro");
+const myStep: Step = { id: "demo-app", title: "Install the demo app", description: "The app used in the workshop", done: false, apply: async () => true };
+await runPlan("This is what we need for the workshop:", [...planIos(state, target), myStep]);
+```
+
+- The device is the last argument. Without it the newest iPhone Pro that your iOS can run is used, here it is pinned to the iPhone 17 Pro.
+- `state.sdkVersion` is `null` when Xcode is not installed. The `{ios}` in the names is then not filled in and the runtime step cannot name a version, so check for `null` before you rely on the names. The plan itself still tells the user that Xcode is missing.
+- A step of your own can have an `action`, like `"install the demo app"`. When it is the only step that is missing, the question names it: "Install the demo app now?".
+
+To start simulators yourself, for example for a smoke test, use `bootSimulator`, `waitForBoot` and `shutdownSimulator`. `waitForBoot` waits for the home screen, which `simctl bootstatus` alone does not.
+
+```ts
+import { bootSimulator, listSimulators, shutdownSimulator, waitForBoot } from "start-ios-simulator";
+
+const simulator = listSimulators()!.find((s) => s.name === "Workshop_1_iPhone_17_Pro_iOS_27_0")!;
+bootSimulator(simulator.udid);
+await waitForBoot(simulator.udid);
+// ... run your tests
+shutdownSimulator(simulator.udid);
 ```
 
 `main(argv)` runs the whole CLI and returns the exit code, for example `await main(["--create", "Test_1_iOS_{ios}", "--yes"])`.
+
+Importing the module has no side effects, and it can be installed on every system. On a system other than macOS the functions find no Xcode, no runtimes and no simulators.
 
 ## Upgrading from 1.x
 
