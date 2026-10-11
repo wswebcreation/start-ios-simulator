@@ -1,6 +1,6 @@
 {
   "name": "start-ios-simulator",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "Start an iOS simulator from your terminal, and set up the iOS runtime and simulators when they are missing",
   "bin": {
     "start-ios-simulator": "dist/cli.js"
