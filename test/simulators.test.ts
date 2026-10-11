@@ -102,6 +102,28 @@ test("booting a simulator that is booted already is not a failure", () => {
   assert.deepEqual(s.bootSimulator("U"), { ok: false, output: "Invalid device: U" });
 });
 
+test("which runtimes have simulators, and how many simulators cannot run anymore", () => {
+  runFile.mock.mockImplementation(() => result(JSON.stringify({
+    devices: {
+      "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [device("A")],
+      "com.apple.CoreSimulator.SimRuntime.iOS-26-5": [],
+      "com.apple.CoreSimulator.SimRuntime.iOS-13-0": [device("B", "Shutdown", { isAvailable: false }), device("C", "Shutdown", { isAvailable: false })],
+    },
+  })));
+  const usage = s.simulatorUsage()!;
+  assert.deepEqual([...usage.usedRuntimes], ["com.apple.CoreSimulator.SimRuntime.iOS-27-0", "com.apple.CoreSimulator.SimRuntime.iOS-13-0"]);
+  assert.equal(usage.unavailable, 2);
+  runFile.mock.mockImplementation(() => result("error", 1));
+  assert.equal(s.simulatorUsage(), null);
+});
+
+test("simulators are deleted with simctl, also the ones that cannot run anymore", async () => {
+  s.deleteSimulator("U");
+  assert.deepEqual(runFile.mock.calls[0]!.arguments[1], ["simctl", "delete", "U"]);
+  await s.deleteUnavailableSimulators();
+  assert.deepEqual(runFileAsync.mock.calls[0]!.arguments, ["xcrun", ["simctl", "delete", "unavailable"]]);
+});
+
 test("the Simulator app opens with the simulator in front", () => {
   assert.equal(s.openSimulatorApp("U"), true);
   assert.deepEqual(runFile.mock.calls[0]!.arguments, ["open", ["-a", "Simulator", "--args", "-CurrentDeviceUDID", "U"]]);

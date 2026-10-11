@@ -1,13 +1,15 @@
-import { checkbox, select } from "@inquirer/prompts";
+import { checkbox, confirm, input, select } from "@inquirer/prompts";
 import { readFileSync } from "node:fs";
 import { HELP, UsageError, hasStartOptions, parseOptions, type Options } from "./args.ts";
 import { printAbout, printBanner } from "./banner.ts";
 import { readConfig, writeConfig } from "./config.ts";
 import { type Inspection, inspect } from "./ios/inspect.ts";
-import { compareVersions } from "./ios/runtimes.ts";
-import { defaultTarget, namedTarget, planIos } from "./ios/setup.ts";
-import { type Simulator, bootSimulator, eraseSimulator, findSimulator, label, matchesIos, openSimulatorApp, shutdownSimulator, waitForBoot } from "./ios/simulators.ts";
+import { unusedRuntimes, runtimeLabel, formatSize } from "./ios/maintain.ts";
+import { compareVersions, deleteRuntime, listRuntimeImages } from "./ios/runtimes.ts";
+import { askedTarget, defaultTarget, namedTarget, planIos } from "./ios/setup.ts";
+import { type Simulator, bootSimulator, deleteSimulator, deleteUnavailableSimulators, eraseSimulator, findSimulator, label, matchesIos, openSimulatorApp, shutdownSimulator, simulatorUsage, waitForBoot } from "./ios/simulators.ts";
 import { blocking, runPlan, showPlan, type Step } from "./plan.ts";
+import { askNewSimulators, type NewSimulator } from "./wizard.ts";
 import { IS_MAC } from "./shell.ts";
 import { bold, cyan, dim, fail, info, ok, settings, startSpinner, warn } from "./ui.ts";
 
@@ -22,12 +24,19 @@ export const realDeps = {
   bootSimulator,
   shutdownSimulator,
   eraseSimulator,
+  deleteSimulator,
+  deleteUnavailableSimulators,
+  listRuntimeImages,
+  simulatorUsage,
+  deleteRuntime,
   openSimulatorApp,
   waitForBoot,
   readConfig,
   writeConfig,
   select: select as (options: unknown) => Promise<string>,
   checkbox: checkbox as (options: unknown) => Promise<string[]>,
+  confirm: confirm as (options: unknown) => Promise<boolean>,
+  input: input as (options: unknown) => Promise<string>,
   interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
   isMac: IS_MAC,
 };
@@ -84,12 +93,17 @@ async function run(opts: Options, deps: Deps): Promise<number> {
   deps.printAbout();
 
   let state = deps.inspect();
+  if (opts.delete.length > 0) return deleteSimulators(opts, state, deps);
+  if (opts.prune) return prune(opts, state, deps);
+  let asked: NewSimulator[] | null = null;
+  if (opts.create[0] === "") ({ opts, asked } = await askForSimulators(opts, state, deps));
+
   const wantsPlan = opts.setup === true || opts.create.length > 0 || opts.dryRun;
   const canStart = state.simulators.length > 0;
 
   if (wantsPlan || opts.check || !canStart) {
     const version = chooseVersion(opts, state);
-    const target = opts.create.length > 0 ? namedTarget(state, version, opts.create, opts.device) : defaultTarget(state, version, opts.device);
+    const target = asked ? askedTarget(version, asked) : opts.create.length > 0 ? namedTarget(state, version, opts.create, opts.device) : defaultTarget(state, version, opts.device);
     const steps = deps.planIos(state, target);
 
     if (opts.check) return check(state, steps);
@@ -257,4 +271,148 @@ async function askOptions(deps: Deps) {
     ],
   });
   return { erase: picked.includes("erase"), headless: picked.includes("headless") };
+}
+
+/** Show a spinner with what we are doing while we wait for something, and take it away when it is done. */
+async function busy<T>(deps: Deps, text: string, work: () => Promise<T>): Promise<T> {
+  const stop = deps.startSpinner(text);
+  try {
+    return await work();
+  } finally {
+    stop();
+  }
+}
+
+/** A bare --create: ask for the version once and the device and name of each simulator, and go on as if the version was given on the command line. */
+async function askForSimulators(opts: Options, state: Inspection, deps: Deps): Promise<{ opts: Options; asked: NewSimulator[] }> {
+  if (!deps.interactive) throw new UsageError("--create without a name asks questions, and there is no terminal to ask in. Give a name: --create <name>");
+  let answers;
+  try {
+    answers = await askNewSimulators(state.runtimes, state.sdkVersion, state.deviceTypes, state.simulators.map((s) => s.name), opts, deps);
+  } catch (e) {
+    if ((e as Error).name === "ExitPromptError") throw e;
+    throw new UsageError((e as Error).message);
+  }
+  return { opts: { ...opts, ios: answers.version, create: answers.simulators.map((s) => s.name) }, asked: answers.simulators };
+}
+
+/** --delete: remove the named simulators. Asks first, unless --yes or there is no terminal to ask in. A simulator that runs is shut down first. */
+async function deleteSimulators(opts: Options, state: Inspection, deps: Deps): Promise<number> {
+  let names = opts.delete;
+  if (names[0] === "") {
+    if (!deps.interactive) throw new UsageError("--delete without a name asks which simulators, and there is no terminal to ask in. Give the names: --delete <name>");
+    if (state.simulators.length === 0) {
+      fail("There are no simulators to delete.");
+      return EXIT.failed;
+    }
+    const picked = await deps.checkbox({
+      message: "Which simulators do you want to delete? (space to select, enter to continue)",
+      choices: state.simulators.map((s) => ({ value: s.udid, name: choiceName(s, false) })),
+    });
+    if (picked.length === 0) {
+      console.log("Nothing deleted.");
+      return EXIT.ok;
+    }
+    names = picked;
+  }
+
+  const found = new Map<string, Simulator>();
+  for (const name of names) {
+    const lookup = findSimulator(state.simulators, name, opts.ios);
+    if ("error" in lookup) {
+      fail(lookup.error);
+      return EXIT.failed;
+    }
+    found.set(lookup.simulator.udid, lookup.simulator);
+  }
+  const sims = [...found.values()];
+  const list = sims.map(label).join(", ");
+
+  if (opts.check || opts.dryRun) {
+    for (const sim of sims) info(`${opts.check ? "Would delete" : "would delete"} ${label(sim)}`);
+    return EXIT.ok;
+  }
+  if (deps.interactive && !opts.yes) {
+    const running = sims.filter((s) => s.booted).length;
+    const sure = await deps.confirm({ message: `Delete ${list}? This removes the simulator and all its data.${running ? " A simulator that runs is shut down first." : ""}`, default: false });
+    if (!sure) {
+      console.log("Nothing deleted.");
+      return EXIT.ok;
+    }
+  }
+
+  let allDeleted = true;
+  for (const sim of sims) {
+    if (sim.booted) deps.shutdownSimulator(sim.udid);
+    const { output, exitCode } = deps.deleteSimulator(sim.udid);
+    if (exitCode === 0) {
+      ok(`Deleted ${label(sim)}`);
+    } else {
+      fail(`Deleting ${label(sim)} failed`);
+      info(output);
+      allDeleted = false;
+    }
+  }
+  return allDeleted ? EXIT.ok : EXIT.failed;
+}
+
+/** --prune: remove the iOS runtimes that no simulator runs on (about 8 GB each), and the simulators that lost their runtime. */
+async function prune(opts: Options, state: Inspection, deps: Deps): Promise<number> {
+  const images = state.xcode ? deps.listRuntimeImages() : null;
+  const usage = state.xcode ? deps.simulatorUsage() : null;
+  if (!images || !usage) {
+    fail("Could not read the iOS runtimes. Is Xcode installed? Run start-ios-simulator --check.");
+    return EXIT.failed;
+  }
+
+  const runtimes = unusedRuntimes(images, usage.usedRuntimes);
+  const items = [
+    ...runtimes.map((r) => ({ value: `runtime:${r.id}`, name: runtimeLabel(r), bytes: r.sizeBytes })),
+    ...(usage.unavailable > 0 ? [{ value: "unavailable", name: `${usage.unavailable} simulator${usage.unavailable === 1 ? "" : "s"} that cannot run anymore, their iOS is gone`, bytes: 0 }] : []),
+  ];
+  if (items.length === 0) {
+    ok("Nothing to remove, every iOS runtime has a simulator");
+    return EXIT.ok;
+  }
+
+  // Everything nobody needs is selected, you deselect what you want to keep
+  let chosen = items.map((i) => i.value);
+  if (!opts.yes && !opts.dryRun) {
+    if (!deps.interactive) throw new UsageError("--prune asks what to remove, and there is no terminal to ask in. Add --yes to remove everything that is unused, or --dry-run to see it.");
+    chosen = await deps.checkbox({
+      message: "Nobody uses these. Which do you want to remove? (space to select, enter to continue)",
+      choices: items.map((i) => ({ value: i.value, name: i.name, checked: true })),
+    });
+  }
+  const picked = items.filter((i) => chosen.includes(i.value));
+  if (picked.length === 0) {
+    console.log("Nothing removed.");
+    return EXIT.ok;
+  }
+
+  if (opts.dryRun || opts.check) {
+    for (const item of picked) info(`would remove ${item.name}`);
+    return EXIT.ok;
+  }
+  const freed = picked.reduce((total, i) => total + i.bytes, 0);
+  if (deps.interactive && !opts.yes) {
+    const sure = await deps.confirm({ message: `Remove ${picked.length} item${picked.length === 1 ? "" : "s"}${freed ? ` (${formatSize(freed)})` : ""}? A runtime can be downloaded again later.`, default: false });
+    if (!sure) {
+      console.log("Nothing removed.");
+      return EXIT.ok;
+    }
+  }
+
+  let failed = false;
+  for (const item of picked) {
+    const result = await busy(deps, `Removing ${item.name}...`, () => (item.value === "unavailable" ? deps.deleteUnavailableSimulators() : deps.deleteRuntime(item.value.slice("runtime:".length))));
+    if (result.exitCode === 0) {
+      ok(`Removed ${item.name}`);
+    } else {
+      fail(`Removing ${item.name} failed`);
+      info(result.output);
+      failed = true;
+    }
+  }
+  return failed ? EXIT.failed : EXIT.ok;
 }

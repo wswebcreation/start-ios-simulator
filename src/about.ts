@@ -5,6 +5,9 @@ export const COMMANDS: [command: string, what: string][] = [
   ["start-ios-simulator [simulator]", "Pick a simulator, or start one by name"],
   ["start-ios-simulator --check", "See what is set up and what is missing"],
   ["start-ios-simulator --setup", "Install what is missing"],
+  ["start-ios-simulator --create [name]", "Create a simulator, see --help"],
+  ["start-ios-simulator --delete [name]", "Delete a simulator"],
+  ["start-ios-simulator --prune", "Remove iOS runtimes no simulator uses"],
 ];
 
 /** The pointer to the rest. Only on the run, --help is where it points to. */

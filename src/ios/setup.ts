@@ -27,6 +27,9 @@ export const defaultTarget = (state: Inspection, version: string | null, device 
   anySimulatorWillDo: true,
 });
 
+/** Simulators that were asked for one by one, each with its own device. */
+export const askedTarget = (version: string | null, simulators: SimulatorSpec[]): SetupTarget => ({ version, simulators, anySimulatorWillDo: false });
+
 /** Simulators with these names (see expandName). Any that already exists is left alone. */
 export const namedTarget = (state: Inspection, version: string | null, names: string[], device = defaultDevice(state.deviceTypes)): SetupTarget => ({
   version,
@@ -61,6 +64,7 @@ export function planIos(state: Inspection, target: SetupTarget): Step[] {
       id: "license",
       title: "Xcode licence and components",
       description: "You accept the licence of Apple and Xcode installs its helper tools. This asks for your Mac password.",
+      action: "accept the Xcode licence and install its components",
       required: needWork,
       done: state.licenseReady,
       apply: () => licenseStep(),
@@ -69,6 +73,7 @@ export function planIos(state: Inspection, target: SetupTarget): Step[] {
       id: "runtime",
       title: `iOS ${version ?? ""} simulator runtime`.replace("  ", " "),
       description: "The iOS that runs inside the simulator (about 8 GB to download).",
+      action: `download the iOS ${version ?? ""} simulator runtime (about 8 GB)`.replace("  ", " "),
       required: needWork,
       done: version !== null && state.runtimes.some((r) => r.version === version),
       apply: () => runtimeStep(version),
@@ -77,6 +82,7 @@ export function planIos(state: Inspection, target: SetupTarget): Step[] {
       id: "simulators",
       title: target.anySimulatorWillDo ? "An iOS simulator" : `${target.simulators.length} iOS simulator${target.simulators.length === 1 ? "" : "s"}`,
       description: `We create ${toCreate.map((s) => `${s.name} (${s.device})`).join(" and ") || "it"}.`,
+      action: `create ${toCreate.map((s) => s.name).join(" and ")}`,
       done: !needWork,
       detail: target.anySimulatorWillDo ? `${state.simulators.length} found` : target.simulators.map((s) => s.name).join(", "),
       apply: () => simulatorsStep(toCreate, version),

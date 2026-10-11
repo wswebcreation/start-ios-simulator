@@ -19,8 +19,12 @@ export interface Options {
   dryRun: boolean;
   /** The iOS version, like 27 or 27.0 */
   ios?: string;
-  /** Simulators to create, by name. {ios} in a name becomes the iOS version, like 27_0 */
+  /** Simulators to create, by name. {ios} in a name becomes the iOS version, like 27_0. A "" is a --create without a name: ask for the details. */
   create: string[];
+  /** Simulators to delete, by name or UDID. A "" is a --delete without a name: pick them from a list. */
+  delete: string[];
+  /** Remove the iOS runtimes and simulators nobody uses */
+  prune: boolean;
   /** The iPhone or iPad for the simulators to create, like "iPhone 17 Pro" */
   device?: string;
   help: boolean;
@@ -45,10 +49,30 @@ Start options
 Setup
   --setup            Show the setup plan, also when nothing is missing
   --no-setup         Never offer to install anything, only report what is missing
-  --create <name>    Create a simulator with this name, repeat it for more. {ios} becomes the iOS version,
-                     like --create "Test_iOS_{ios}" for Test_iOS_27_0
+  --create [name]    Create a simulator with this name, repeat it for more. {ios} becomes the iOS version,
+                     like --create "Test_iOS_{ios}" for Test_iOS_27_0.
+                     Without a name you pick the version, the device and the name from a list
+  --delete [name]    Delete the simulator with this name (or UDID), repeat it for more.
+                     Without a name you pick the simulators to delete from a list
+  --prune            Remove the iOS runtimes no simulator uses, and the simulators that cannot run anymore
   --device <device>  The iPhone or iPad for the simulators to create (default: the newest iPhone Pro)
   --dry-run          Show what the setup would do, without changing anything
+
+Examples
+  Create a simulator by picking the version, device and name from a list:
+    start-ios-simulator --create
+  Create a simulator with the iOS version of your Xcode, then start it:
+    start-ios-simulator --create "Test_iOS_{ios}"
+    start-ios-simulator Test_iOS_27_0
+  Create two simulators for iOS 26.4 with another device, without questions:
+    start-ios-simulator --create "Test_1_iOS_{ios}" --create "Test_2_iOS_{ios}" --ios 26.4 --device "iPhone 17" --yes
+  See what would happen without changing anything:
+    start-ios-simulator --create "Test_iOS_{ios}" --dry-run
+  Delete simulators by picking them from a list, or by name (asks first, --yes skips the question):
+    start-ios-simulator --delete
+    start-ios-simulator --delete Test_iOS_27_0
+  Free disk space, every unused iOS runtime is about 8 GB:
+    start-ios-simulator --prune
 
 Other
   --check            Only show what is set up and what is missing, exits with 1 when something is missing
@@ -58,13 +82,16 @@ Other
 `;
 
 const IOS = /^\d+(\.\d+)?$/;
-const NAME = /^[\w.{}-]+$/;
+export const NAME = /^[\w.{}-]+$/;
 
 export function parseOptions(argv: string[]): Options {
+  // A --create or --delete without a name (last, or before another option) starts the questions, parseArgs wants a value for it
+  const rest = argv.map((arg, i, all) => ((arg === "--create" || arg === "--delete") && (all[i + 1] === undefined || all[i + 1]!.startsWith("-")) ? `${arg}=` : arg));
+
   let parsed;
   try {
     parsed = parseArgs({
-      args: argv,
+      args: rest,
       allowPositionals: true,
       allowNegative: true,
       options: {
@@ -77,6 +104,8 @@ export function parseOptions(argv: string[]): Options {
         "dry-run": { type: "boolean" },
         ios: { type: "string" },
         create: { type: "string", multiple: true },
+        delete: { type: "string", multiple: true },
+        prune: { type: "boolean" },
         device: { type: "string" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
@@ -90,9 +119,14 @@ export function parseOptions(argv: string[]): Options {
   if (positionals.length > 1) throw new UsageError(`Only one simulator can be started at a time, but you gave ${positionals.length}: ${positionals.join(", ")}`);
   if (values.ios !== undefined && !IOS.test(values.ios)) throw new UsageError(`"${values.ios}" is not an iOS version, use for example --ios 27.0`);
   const create = values.create ?? [];
-  for (const name of create) {
+  if (create.includes("") && create.length > 1) throw new UsageError("Use --create on its own to be asked for the details, or give every --create a name.");
+  for (const name of create.filter(Boolean)) {
     if (!NAME.test(name)) throw new UsageError(`"${name}" is not a valid simulator name, use letters, numbers, _ . - and {ios}`);
   }
+  const del = values.delete ?? [];
+  if (del.includes("") && del.length > 1) throw new UsageError("Use --delete on its own to pick the simulators from a list, or give every --delete a name.");
+  if (del.length > 0 && (positionals[0] || create.length > 0)) throw new UsageError("--delete removes simulators, it cannot be combined with --create or a simulator to start.");
+  if (values.prune && (positionals[0] || create.length > 0 || del.length > 0)) throw new UsageError("--prune cleans up, it cannot be combined with --create, --delete or a simulator to start.");
   if (positionals[0] && create.length > 0) throw new UsageError("--create sets up simulators, it does not start one. Start them afterwards with their name.");
   if (values.device && create.length === 0) throw new UsageError("--device is for the simulators you create, add --create <name>.");
 
@@ -107,6 +141,8 @@ export function parseOptions(argv: string[]): Options {
     dryRun: values["dry-run"] ?? false,
     ios: values.ios,
     create,
+    delete: del,
+    prune: values.prune ?? false,
     device: values.device,
     help: values.help ?? false,
     version: values.version ?? false,

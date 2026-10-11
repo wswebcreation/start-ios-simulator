@@ -99,3 +99,15 @@ test("the plan stops at the first step that fails", async () => {
   assert.deepEqual(result, { ok: false, applied: [], declined: false });
   assert.match(output.join("\n"), /Stopped, because this step failed/);
 });
+
+test("the question names the step when only one is missing, and the count when there are more", async () => {
+  settings.yes = false;
+  select.mock.mockImplementation(async () => "none");
+  select.mock.resetCalls();
+  await runPlan("x", [step("a", { done: false, action: "create Test_iOS_27_0" })]);
+  await runPlan("x", [step("a", { done: false, action: "create Test_iOS_27_0" }), step("b", { done: false })]);
+  await runPlan("x", [step("a", { done: false })]);
+  assert.deepEqual(select.mock.calls.map((c) => (c.arguments[0] as { message: string }).message), ["Create Test_iOS_27_0 now?", "Set up the 2 missing items now?", "Set up the 1 missing item now?"]);
+  assert.equal((select.mock.calls[0]!.arguments[0] as { choices: { name: string }[] }).choices[0]!.name, "Yes, go ahead");
+  select.mock.mockImplementation(async () => "all");
+});
