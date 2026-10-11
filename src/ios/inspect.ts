@@ -1,6 +1,7 @@
-import { type DeviceType, type Runtime, listRuntimes } from "./runtimes.ts";
-import { type Simulator, listSimulators } from "./simulators.ts";
-import { type XcodeInstall, detectXcode, findXcodeApps, firstLaunchDone, licenseAccepted, simulatorSdkVersion } from "./xcode.ts";
+import { runAsync, runFileAsync } from "../shell.ts";
+import { type DeviceType, type Runtime, parseRuntimes } from "./runtimes.ts";
+import { type Simulator, parseSimulators } from "./simulators.ts";
+import { type XcodeInstall, findXcodeApps } from "./xcode.ts";
 
 /** What this machine has today. Only looks, nothing is changed. */
 export interface Inspection {
@@ -17,16 +18,37 @@ export interface Inspection {
   deviceTypes: DeviceType[];
 }
 
-export function inspect(): Inspection {
-  const xcode = detectXcode();
-  const runtimes = xcode ? (listRuntimes() ?? []) : [];
+/** Asks everything at the same time, and without blocking, so a spinner keeps turning while we wait for xcodebuild and simctl. */
+export async function inspect(): Promise<Inspection> {
+  const version = (await runAsync("xcodebuild -version"))?.match(/Xcode (\S+)/)?.[1];
+  if (!version) return { xcode: null, xcodeApps: findXcodeApps(), licenseReady: false, sdkVersion: null, runtimes: [], simulators: [], deviceTypes: [] };
+
+  const [path, license, firstLaunch, sdk, runtimes, simulators] = await Promise.all([
+    runAsync("xcode-select -p"),
+    runFileAsync("xcodebuild", ["-license", "check"]),
+    runFileAsync("xcodebuild", ["-checkFirstLaunchStatus"]),
+    runAsync("xcodebuild -version -sdk iphonesimulator ProductVersion"),
+    simctlJsonAsync(["list", "runtimes"]),
+    simctlJsonAsync(["list", "devices"]),
+  ]);
+  const installed = runtimes ? parseRuntimes(runtimes) : [];
   return {
-    xcode,
-    xcodeApps: xcode ? [] : findXcodeApps(),
-    licenseReady: xcode !== null && licenseAccepted() && firstLaunchDone(),
-    sdkVersion: xcode ? simulatorSdkVersion() : null,
-    runtimes,
-    simulators: xcode ? (listSimulators() ?? []) : [],
-    deviceTypes: runtimes[0]?.deviceTypes ?? [],
+    xcode: { version, path },
+    xcodeApps: [],
+    licenseReady: license.exitCode === 0 && firstLaunch.exitCode === 0,
+    sdkVersion: sdk || null,
+    runtimes: installed,
+    simulators: simulators ? parseSimulators(simulators) : [],
+    deviceTypes: installed[0]?.deviceTypes ?? [],
   };
+}
+
+async function simctlJsonAsync(args: string[]): Promise<unknown | null> {
+  const { output, exitCode } = await runFileAsync("xcrun", ["simctl", ...args, "-j"]);
+  if (exitCode !== 0) return null;
+  try {
+    return JSON.parse(output);
+  } catch {
+    return null;
+  }
 }

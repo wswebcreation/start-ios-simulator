@@ -1,4 +1,4 @@
-import { execSync, spawn, spawnSync } from "node:child_process";
+import { exec, execSync, spawn, spawnSync } from "node:child_process";
 import { platform } from "node:os";
 
 export const IS_MAC = platform() === "darwin";
@@ -22,6 +22,11 @@ export function run(cmd: string, env: NodeJS.ProcessEnv = process.env): string |
   } catch {
     return null;
   }
+}
+
+/** Like run, but the program keeps going while it waits: a spinner only turns when nothing blocks the event loop. */
+export function runAsync(cmd: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  return new Promise((resolve) => exec(cmd, { encoding: "utf8", env }, (error, stdout) => resolve(error ? null : stdout.trim())));
 }
 
 /** Run an executable with arguments (no shell quoting issues for names with spaces). */

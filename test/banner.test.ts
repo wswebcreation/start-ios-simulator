@@ -101,12 +101,15 @@ test("under the banner it says what the tool does, the commands to try, and wher
   assert.match(text, /  start-ios-simulator \[simulator\]\s+Pick a simulator, or start one by name/);
   assert.match(text, /  start-ios-simulator --check\s+See what is set up and what is missing/);
   assert.match(text, /  start-ios-simulator --setup\s+Install what is missing/);
+  assert.match(text, /  start-ios-simulator --create \[name\]\s+Create a simulator, see --help/);
+  assert.match(text, /  start-ios-simulator --delete \[name\]\s+Delete a simulator/);
+  assert.match(text, /  start-ios-simulator --prune\s+Remove iOS runtimes no simulator uses/);
   assert.match(text, /  start-ios-simulator --help\s+All options\n$/);
 });
 
-test("it is short: the intro, three commands and the pointer", () => {
-  assert.ok(aboutLines("none").filter((line) => line.trim()).length <= 7);
-  assert.ok(aboutLines("none").every((line) => line.length <= 80));
+test("it is short: the intro, six commands and the pointer", () => {
+  assert.ok(aboutLines("none").filter((line) => line.trim()).length <= 10);
+  assert.ok(aboutLines("none").every((line) => line.length <= 100));
 });
 
 test("the descriptions line up in one column", () => {

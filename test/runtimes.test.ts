@@ -6,7 +6,8 @@ import { after, beforeEach, mock, test } from "node:test";
 
 const result = (output = "", exitCode = 0) => ({ output, exitCode });
 const runFile = mock.fn((_file: string, _args?: string[], _options?: unknown) => result());
-mock.module("../src/shell.ts", { namedExports: { IS_MAC: true, run: () => null, runFile, runFileAsync: async () => result() } });
+const runFileAsync = mock.fn(async (_file: string, _args?: string[]) => result());
+mock.module("../src/shell.ts", { namedExports: { IS_MAC: true, run: () => null, runFile, runFileAsync } });
 const runtimes = await import("../src/ios/runtimes.ts");
 
 const root = mkdtempSync(join(tmpdir(), "start-ios-simulator-runtimes-"));
@@ -92,4 +93,38 @@ test("there is nothing to register when no runtime is stuck, or the disk image i
   const verified = { ...image, signatureState: "Verified" };
   runFile.mock.mockImplementation(() => result(JSON.stringify({ A: verified })));
   assert.equal(runtimes.registerDownloadedRuntime("27.0"), false);
+});
+
+const image = (version: string, extra = {}) => ({
+  platformIdentifier: "com.apple.platform.iphonesimulator",
+  runtimeIdentifier: runtimes.runtimeId(version),
+  version,
+  state: "Ready",
+  sizeBytes: 8_000_000_000,
+  ...extra,
+});
+
+test("the runtimes on disk are the iOS ones, with their size, and an unusable one says so", () => {
+  const list = runtimes.parseRuntimeImages({
+    A: image("26.5"),
+    B: image("27.0"),
+    C: image("27.0", { state: "Unusable" }),
+    D: { ...image("12.0"), platformIdentifier: "com.apple.platform.appletvsimulator" },
+  });
+  assert.deepEqual(list.map((i) => [i.id, i.version, i.usable]), [["B", "27.0", true], ["C", "27.0", false], ["A", "26.5", true]]);
+  assert.equal(list[0]!.sizeBytes, 8_000_000_000);
+  assert.deepEqual(runtimes.parseRuntimeImages(null), []);
+});
+
+test("listRuntimeImages asks simctl, and is null when simctl does not work", () => {
+  runFile.mock.mockImplementation(() => result(JSON.stringify({ A: image("26.5") })));
+  assert.equal(runtimes.listRuntimeImages()!.length, 1);
+  assert.deepEqual(runFile.mock.calls[0]!.arguments[1], ["simctl", "runtime", "list", "-j"]);
+  runFile.mock.mockImplementation(() => result("error", 1));
+  assert.equal(runtimes.listRuntimeImages(), null);
+});
+
+test("a runtime is deleted by its id", async () => {
+  await runtimes.deleteRuntime("A");
+  assert.deepEqual(runFileAsync.mock.calls[0]!.arguments, ["xcrun", ["simctl", "runtime", "delete", "A"]]);
 });

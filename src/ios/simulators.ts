@@ -92,6 +92,23 @@ export function bootSimulator(udid: string): { ok: boolean; output: string } {
   return { ok: exitCode === 0 || /current state: Booted/i.test(output), output };
 }
 
+export const deleteSimulator = (udid: string) => simctl(["delete", udid]);
+
+/** The runtimes that have at least one simulator, and how many simulators are unavailable (their runtime was removed). Null when simctl does not work. */
+export function simulatorUsage(): { usedRuntimes: Set<string>; unavailable: number } | null {
+  const json = simctlJson(["list", "devices"]);
+  if (!json) return null;
+  const usedRuntimes = new Set<string>();
+  let unavailable = 0;
+  for (const [runtime, devices] of Object.entries<any[]>(json.devices ?? {})) {
+    if (devices.length > 0) usedRuntimes.add(runtime);
+    unavailable += devices.filter((d) => d.isAvailable === false).length;
+  }
+  return { usedRuntimes, unavailable };
+}
+
+export const deleteUnavailableSimulators = () => runFileAsync("xcrun", ["simctl", "delete", "unavailable"]);
+
 export const shutdownSimulator = (udid: string) => simctl(["shutdown", udid]);
 export const eraseSimulator = (udid: string) => simctl(["erase", udid]);
 

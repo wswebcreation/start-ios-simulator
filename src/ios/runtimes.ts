@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { arch } from "node:os";
 import { join } from "node:path";
-import { runFile } from "../shell.ts";
+import { runFile, runFileAsync, type RunResult } from "../shell.ts";
 
 export interface DeviceType {
   name: string;
@@ -83,3 +83,29 @@ export function registerDownloadedRuntime(version: string): boolean {
     return false;
   }
 }
+
+/** A downloaded iOS runtime on disk. There can be more than one of the same version, and one that is unusable. */
+export interface RuntimeImage {
+  id: string;
+  identifier: string;
+  version: string;
+  usable: boolean;
+  sizeBytes: number;
+}
+
+/** The iOS runtimes on disk from the output of `simctl runtime list -j`, the newest first. */
+export function parseRuntimeImages(json: any): RuntimeImage[] {
+  return Object.entries<any>(json ?? {})
+    .filter(([, i]) => i?.platformIdentifier === "com.apple.platform.iphonesimulator" && typeof i.runtimeIdentifier === "string")
+    .map(([id, i]) => ({ id, identifier: i.runtimeIdentifier, version: String(i.version), usable: i.state === "Ready", sizeBytes: Number(i.sizeBytes) || 0 }))
+    .sort((a, b) => compareVersions(b.version, a.version) || a.id.localeCompare(b.id));
+}
+
+/** Null when simctl does not work. */
+export function listRuntimeImages(): RuntimeImage[] | null {
+  const json = simctlJson(["runtime", "list"]);
+  return json ? parseRuntimeImages(json) : null;
+}
+
+/** Removing the disk image of a runtime takes a moment, so this does not block the spinner. */
+export const deleteRuntime = (id: string): Promise<RunResult> => runFileAsync("xcrun", ["simctl", "runtime", "delete", id]);
